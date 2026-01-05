@@ -1,57 +1,87 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UmkmController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\MitraController;
+use App\Http\Controllers\EventController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\Admin\VerifikasiUmkmController;
+
+Route::get('/force-login', function() {
+    $user = \App\Models\User::where('role', 'admin')->first();
+    if($user) {
+        Auth::login($user);
+        return redirect('/admin/dashboard');
+    }
+    return 'User Admin tidak ditemukan di database!';
+});
 
 Route::get('/', function () {
     return view('welcome');
 });
 
 Route::get('/dashboard', function () {
-    $role = auth()->user()->role;
-
-    if ($role === 'admin') {
-        return redirect()->route('admin.dashboard');
-    } elseif ($role === 'mitra') {
-        return redirect()->route('mitra.dashboard');
+    if (!Auth::check()) {
+        return redirect()->route('login');
     }
 
-    return redirect()->route('umkm.dashboard');
-})->middleware(['auth'])->name('dashboard');
+    return match (Auth::user()->role) {
+        'admin' => redirect()->route('admin.dashboard'),
+        'mitra' => redirect()->route('mitra.dashboard'),
+        'umkm'  => redirect()->route('umkm.dashboard'),
+        default => abort(403, 'Role tidak dikenali'),
+    };
+})->middleware('auth')->name('dashboard');
 
-//Admin
-Route::middleware(['auth', 'role:admin'])->group(function () {
-    Route::get('/admin/dashboard', function () {
-        return view('admin.dashboard'); // Pastikan Caca buat folder admin/dashboard.blade.php
-    })->name('admin.dashboard');
+
+Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/buat-admin-rahasia', function() {
+    $admin = \App\Models\User::create([
+        'name' => 'Admin Railway',
+        'email' => 'admin@gmail.com',
+        'password' => Hash::make('admin123'),
+        'role' => 'admin'
+    ]);
+    return "Admin berhasil dibuat!";
+});
+    Route::get('/dashboard', [AdminController::class, 'index'])->name('dashboard');
+    Route::get('/verifikasi', [AdminController::class, 'verifikasiIndex'])->name('verifikasi.index');
+    Route::patch('/verifikasi/{id}', [AdminController::class, 'verifikasiUpdate'])->name('verifikasi.update');
+    Route::get('/cetak-laporan', [AdminController::class, 'cetakLaporan'])->name('verifikasi.cetak');
+    Route::get('/pinjaman', [AdminController::class, 'pinjamanIndex'])->name('pinjaman.index');
+    Route::get('/pembayaran', [AdminController::class, 'pembayaranIndex'])->name('pembayaran.index');
+    Route::get('/event', [AdminController::class, 'eventIndex'])->name('event.index');
+    Route::get('/event/detail/{id}', [AdminController::class, 'showEvent'])->name('event.show');
 });
 
-// UMKM
-Route::middleware(['auth', 'role:umkm'])->group(function () {
-    // Dashboard Utama UMKM
-    Route::get('/umkm/dashboard', [UmkmController::class, 'index'])->name('umkm.dashboard');
 
-    // Proses Input Data (Profil UMKM)
-    Route::get('/umkm/input-data', [UmkmController::class, 'create'])->name('umkm.input');
-    Route::post('/umkm/input-data', [UmkmController::class, 'store'])->name('umkm.store');
-    
-    // Proses Edit Data
-    Route::get('/umkm/edit-data', [UmkmController::class, 'edit'])->name('umkm.edit');
-    Route::patch('/umkm/edit-data', [UmkmController::class, 'update'])->name('umkm.update');
-    
-    // Fitur Paylater/Pinjaman
-    Route::post('/umkm/ajukan-pinjaman', [UmkmController::class, 'ajukanPinjaman'])->name('umkm.ajukan-pinjaman');
-    Route::get('/umkm/cetak-bukti/{id}', [UmkmController::class, 'cetakBukti'])->name('umkm.cetak-bukti');
-    Route::get('/umkm/bayar/{id_pinjaman}', [UmkmController::class, 'bayar'])->name('umkm.bayar');
-    // Catatan: Route umkm.create dan umkm.store yang duplikat di bawah sudah dihapus 
-    // karena sudah diwakili oleh umkm.input dan umkm.store di atas.
+
+Route::middleware(['auth', 'role:umkm'])->prefix('umkm')->name('umkm.')->group(function () {
+    Route::get('/dashboard', [UmkmController::class, 'index'])->name('dashboard');
+    Route::get('/input-data', [UmkmController::class, 'create'])->name('create');
+    Route::post('/store-data', [UmkmController::class, 'store'])->name('store');
+    Route::get('/edit-data', [UmkmController::class, 'edit'])->name('edit');
+    Route::patch('/update-data', [UmkmController::class, 'update'])->name('update');
+    Route::get('/events', [UmkmController::class, 'semuaEvent'])->name('semua_event');
+    Route::get('/event/{id}', [UmkmController::class, 'detailEvent'])->name('detail_event');    
+    Route::post('/daftar-event/{id}', [UmkmController::class, 'daftarEvent'])->name('daftar_event');
+    Route::post('/ajukan-pinjaman', [UmkmController::class, 'ajukanPinjaman'])->name('ajukan-pinjaman');
+    Route::get('/bayar/{id}', [UmkmController::class, 'bayar'])->name('bayar');
+    Route::get('/pembayaran-sukses/{id}', [UmkmController::class, 'pembayaranSukses'])->name('pembayaranSukses');
+    Route::get('/cetak-bukti/{id}', [UmkmController::class, 'cetakBukti'])->name('cetakBukti');
+    Route::post('/kerjasama/{id}/acc', [UmkmController::class, 'accKerjasama'])->name('acc_kerjasama');
+    Route::post('/kerjasama/{id}/tolak', [UmkmController::class, 'tolakKerjasama'])->name('tolak_kerjasama');
 });
-// Mitra
-Route::middleware(['auth', 'role:mitra'])->group(function () {
-    Route::get('/mitra/dashboard', function () {
-        return view('mitra.dashboard'); // Pastikan Caca buat folder mitra/dashboard.blade.php
-    })->name('mitra.dashboard');
+
+Route::middleware(['auth', 'role:mitra'])->prefix('mitra')->name('mitra.')->group(function () {
+    Route::get('/dashboard', [MitraController::class, 'dashboard'])->name('dashboard'); // Panggil: route('mitra.dashboard')
+    Route::get('/eksplorasi', [MitraController::class, 'eksplorasi'])->name('eksplorasi');
+    Route::get('/umkm/{id}', [MitraController::class, 'show'])->name('umkm.show');
+    Route::post('/ajukan-kerjasama/{id}', [MitraController::class, 'ajukanKerjasama'])->name('ajukan.kerjasama');
+    Route::resource('events', EventController::class)->only(['index', 'create', 'store']);
+    Route::get('/mitra/partners', [MitraController::class, 'partnerSaya'])->name('mitra.partners');
 });
 
 Route::middleware('auth')->group(function () {
@@ -59,7 +89,5 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
-
-
 
 require __DIR__.'/auth.php';
